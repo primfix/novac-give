@@ -158,9 +158,9 @@ class Give_Novac_Gateway extends PaymentGateway implements WebhookNotificationsL
         if (is_wp_error($init)) {
             $secret = trim((string) give_get_option('give_novac_secret_key'));
             PaymentGatewayLog::error(
-                'Novac – Initialize Error',
+                'Novac – Initialize Errorx',
                 [
-                    'message' => $init->get_error_message(),
+                    'message' => (string) $init->get_error_code(),
                     'donation_id' => $donation->id
                 ]
             );
@@ -208,6 +208,10 @@ class Give_Novac_Gateway extends PaymentGateway implements WebhookNotificationsL
 
         $donation = Donation::find($donationId);
         if (!$donation) {
+            PaymentGatewayLog::error('Novac Transaction Not Found', [
+                'donation_id' => $donationId,
+                'reference' => $reference,
+            ]);
             return new RedirectResponse(give_get_failed_transaction_uri());
         }
 
@@ -215,6 +219,12 @@ class Give_Novac_Gateway extends PaymentGateway implements WebhookNotificationsL
         if (give_is_donation_completed($donationId)) {
             return new RedirectResponse(give_get_success_page_uri());
         }
+
+        PaymentGatewayLog::error('Verifying Novac Return', [
+            'donation_id' => $donationId,
+            'reference' => $reference,
+        ]);
+
 
         // Verify the transaction with Novac API
         $verify = $this->verifyNovac($reference);
@@ -246,7 +256,7 @@ class Give_Novac_Gateway extends PaymentGateway implements WebhookNotificationsL
 
         PaymentGatewayLog::info('Novac Return Verification', $verify);
 
-        if ($verifiedStatus === 'success') {
+        if ($verifiedStatus === 'successful') {
             $donation->status = DonationStatus::COMPLETE();
             $donation->gatewayTransactionId = $reference;
             $donation->save();
@@ -350,7 +360,7 @@ class Give_Novac_Gateway extends PaymentGateway implements WebhookNotificationsL
             return new WP_Error('novac_missing_secret', 'Novac Public Key is not set.');
         }
 
-        $amount =  (string)(floatval($donation->amount->getAmount()) / 100); // e.g., NGN kobo
+        $amount =  (floatval($donation->amount->getAmount()) / 100); // e.g., NGN kobo
         $currency = $donation->amount->getCurrency()->getCode();        // e.g., NGN, USD
 //		$reference = $donation->gatewayTransactionId ?: $donation->paymentKey;
         $reference = 'give-' . $donation->id . '-' . uniqid('GWP');
@@ -372,26 +382,27 @@ class Give_Novac_Gateway extends PaymentGateway implements WebhookNotificationsL
             'transactionReference' => $reference,
             'amount'      => $amount,
             'currency'    => $currency ?? 'NGN',
+            'redirectUrl' => $returnUrl,
             'checkoutCustomerData' => [
-                'email' => $donation->donor->email,
-                'firstName' => $donation->donor->firstName ?? '',
-                'lastName' => $donation->donor->lastName ?? '',
-                'phoneNumber' => ''
+                'email' => $donation->email,
+                'firstName' => $donation->firstName ?? '',
+                'lastName' => $donation->lastName ?? '',
+                'phoneNumber' => $donation->phone ?? '',
             ],
             'checkoutCustomizationData' => [
-                'logoUrl' => get_site_icon_url() ?? home_url( '/favicon.ico' ),
-                'paymentMethodLogoUrl' => '',
-                'checkoutModalTitle' => 'Donate with Novac',
+//                'logoUrl' => get_site_icon_url() ?? home_url( '/favicon.ico' ),
+                'paymentDescription' => $donation->formTitle,
+                'checkoutModalTitle' => $donation->formTitle,
             ]
         ];
-
-        $body = wp_json_encode( $body );
 
         PaymentGatewayLog::info(
             'Novac – Payload for Checkout',
             [
                 'donation_id' => $donation->id,
                 'payload' => $body,
+                'redirectUrl' => $returnUrl,
+//                "meta_data" => $donation
             ]
         );
 
@@ -402,7 +413,7 @@ class Give_Novac_Gateway extends PaymentGateway implements WebhookNotificationsL
                 'Content-Type'  => 'application/json',
             ],
             'body'    => wp_json_encode($body),
-            'timeout' => 45,
+            'timeout' => 60,
         ];
 
         $res = wp_remote_post($endpoint, $args);
