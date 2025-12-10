@@ -76,6 +76,11 @@ The plugin includes webhook verification with a whitelisted IP address (`23.23.2
 GNU General Public License v3.0 or later
 http://www.gnu.org/licenses/gpl-3.0.html
 
+## Images
+
+![img.png](img.png)
+![img_1.png](img_1.png)
+
 ## Support
 
 For support and more information, visit:
